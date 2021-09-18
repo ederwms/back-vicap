@@ -2,5 +2,8 @@
 src/index.js
 node_modules/
 
+src/tmp/*
+!src/tmp/.gitkeep
+
 yarn.lock
 package-lock.json

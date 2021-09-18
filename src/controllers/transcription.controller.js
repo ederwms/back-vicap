@@ -1,29 +1,58 @@
-const accountService = require('../services/analyzer/account.service')
-const videoService = require('../services/analyzer/video.service')
+const transcriptionService = require('../services/aws.transcribe/transcription.service')
+const videoService = require('../services/video/video.service')
 
 const handleError = require('../helpers/errors/errorHandler')
 
-const getVideoTranscription = async (req, res) => {
-  console.log('teste')
+const startVideoTranscription = async (req, res) => {
   try {
-    const token = await accountService.getAccountToken()
-    const videoInsights = await videoService.getVideoIndex(token)
+    const result = await transcriptionService.startTranscriptionJob()
 
-    const transcript = videoInsights.transcript.map((item) => ({
-      text: item.text,
-      startTime: item.instances[0].start,
-      endTime: item.instances[0].end
+    return res.json({ result })
+  } catch (error) {
+    handleError(error.$metadata.httpStatusCode, error.message)
+  }
+}
+
+const listTranscriptionJobs = async (req, res) => {
+  const { name: filter, nextPageToken } = req.query
+
+  try {
+    const data = await transcriptionService.listTranscriptionJobs(filter, nextPageToken)
+    const result = data.TranscriptionJobSummaries.map((item) => ({
+      startTime: item.StartTime,
+      endTime: item.CompletionTime,
+      language: item.LanguageCode,
+      name: item.TranscriptionJobName,
+      status: item.TranscriptionJobStatus
     }))
 
-    return res.json({ transcription: transcript })
+    return res.json({
+      jobs: result,
+      ...(data.NextToken && { nextPageToken: data.NextToken })
+    })
   } catch (error) {
-    // TODO tratativa de erro
-    // console.log(error)
-    // throw new Error('erro')
-    handleError(error.response.status, error.response.data.Message)
+    handleError(error.$metadata.httpStatusCode, error.message)
+  }
+}
+
+const getTranscriptionJobByName = async (req, res) => {
+  const transcriptionJobName = req.query.name
+
+  try {
+    const { transcriptionFileUrl } = await transcriptionService.getTranscriptionDetailsByName(transcriptionJobName)
+    await videoService.downloadVideoTranscriptionFile(transcriptionFileUrl)
+    await videoService.createSrtFile()
+    await videoService.generateSubtitledVideo()
+    const uploadedVideo = await videoService.uploadSubtitledVideoToS3()
+
+    return res.json({ videoUrl: uploadedVideo.Location })
+  } catch (error) {
+    handleError(error.$metadata.httpStatusCode, error.message)
   }
 }
 
 module.exports = {
-  getVideoTranscription
+  startVideoTranscription,
+  getTranscriptionJobByName,
+  listTranscriptionJobs
 }

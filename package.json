@@ -4,12 +4,15 @@
   "description": "Projeto de API para comunicação com o serviço de transcrição de vídeos Microsoft Video Analyzer",
   "main": "index.js",
   "scripts": {
-    "start:dev": "nodemon --inspect src/server.js",
+    "start:dev": "nodemon --inspect --ignore src/tmp/* src/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Eder Sousa",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-transcribe": "^3.31.0",
+    "aws-sdk": "^2.990.0",
+    "aws-transcription-to-srt": "^1.0.6",
     "axios": "^0.21.1",
     "cors": "^2.8.5",
     "dotenv": "^10.0.0",
