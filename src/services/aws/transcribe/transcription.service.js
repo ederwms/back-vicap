@@ -5,19 +5,20 @@ const {
   GetTranscriptionJobCommand
 } = require('@aws-sdk/client-transcribe')
 
+const dbService = require('../../service.db/transcription.service')
+
 const client = new TranscribeClient({ region: process.env.AWS_REGION })
 
-const awsTranscribeParams = {
-  TranscriptionJobName: 'transcription-job-07',
-  IdentifyLanguage: true,
-  MediaFormat: 'mp4',
-  Media: {
-    MediaFileUri: 'https://vicap-bucket.s3.amazonaws.com/video-portugues.mp4'
-  }
-}
-
-const startTranscriptionJob = async () => {
+const startTranscriptionJob = async (jobName, fileUrl) => {
   try {
+    const awsTranscribeParams = {
+      TranscriptionJobName: jobName,
+      IdentifyLanguage: true,
+      MediaFormat: 'mp4',
+      Media: {
+        MediaFileUri: fileUrl
+      }
+    }
     const data = await client.send(new StartTranscriptionJobCommand(awsTranscribeParams))
 
     return data
@@ -43,13 +44,13 @@ const listTranscriptionJobs = async (transcriptionName = '', nextPageToken = '')
 }
 
 const getTranscriptionDetailsByName = async (transcriptionJobName = null) => {
-  const getTranscriptionParams = {
-    TranscriptionJobName: transcriptionJobName
-  }
-
   try {
+    const getTranscriptionParams = {
+      TranscriptionJobName: transcriptionJobName
+    }
     const data = await client.send(new GetTranscriptionJobCommand(getTranscriptionParams))
     const result = {
+      originalVideoLink: data.TranscriptionJob.Media.MediaFileUri,
       transcriptionFileUrl: data.TranscriptionJob.Transcript.TranscriptFileUri
     }
 

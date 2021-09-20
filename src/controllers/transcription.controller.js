@@ -1,15 +1,21 @@
-const transcriptionService = require('../services/aws.transcribe/transcription.service')
+const transcriptionService = require('../services/aws/transcribe/transcription.service')
+const dbService = require('../services/service.db/transcription.service')
 const videoService = require('../services/video/video.service')
 
+const { Created, Success } = require('../helpers/success')
 const handleError = require('../helpers/errors/errorHandler')
 
 const startVideoTranscription = async (req, res) => {
-  try {
-    const result = await transcriptionService.startTranscriptionJob()
+  const { transcriptionJobName } = req.body
+  const file = req.file
 
-    return res.json({ result })
+  try {
+    const transcriptionJobResult = await transcriptionService.startTranscriptionJob(transcriptionJobName, file.location)
+    await dbService.createTranscriptionJob({ jobName: transcriptionJobName, originalVideoLink: file.location })
+
+    return new Created(req, res).json({ transcriptionJobResult })
   } catch (error) {
-    handleError(error.$metadata.httpStatusCode, error.message)
+    handleError(error.$metadata ? error.$metadata.httpStatusCode : 500, error.message)
   }
 }
 
@@ -26,12 +32,12 @@ const listTranscriptionJobs = async (req, res) => {
       status: item.TranscriptionJobStatus
     }))
 
-    return res.json({
+    return new Success(req, res).json({
       jobs: result,
       ...(data.NextToken && { nextPageToken: data.NextToken })
     })
   } catch (error) {
-    handleError(error.$metadata.httpStatusCode, error.message)
+    handleError(error.$metadata ? error.$metadata.httpStatusCode : 500, error.message)
   }
 }
 
@@ -39,15 +45,27 @@ const getTranscriptionJobByName = async (req, res) => {
   const transcriptionJobName = req.query.name
 
   try {
-    const { transcriptionFileUrl } = await transcriptionService.getTranscriptionDetailsByName(transcriptionJobName)
-    await videoService.downloadVideoTranscriptionFile(transcriptionFileUrl)
-    await videoService.createSrtFile()
-    await videoService.generateSubtitledVideo()
-    const uploadedVideo = await videoService.uploadSubtitledVideoToS3()
+    const { subtitledVideoLink, subtitlesJson } = await dbService.getTranscriptionJobByName(transcriptionJobName)
 
-    return res.json({ videoUrl: uploadedVideo.Location })
+    if (subtitledVideoLink) {
+      return res.json({ videoUrl: subtitledVideoLink, subtitles: JSON.parse(subtitlesJson) })
+    } else {
+      const { transcriptionFileUrl, originalVideoLink } = await transcriptionService.getTranscriptionDetailsByName(transcriptionJobName)
+      await videoService.downloadVideoTranscriptionFile(transcriptionFileUrl)
+      const subtitlesJson = await videoService.createSrtFile()
+      await videoService.generateSubtitledVideo(originalVideoLink)
+      const uploadedVideo = await videoService.uploadSubtitledVideoToS3()
+      await dbService.editTranscriptionJob({
+        jobName: transcriptionJobName,
+        subtitledVideoLink: uploadedVideo.Location,
+        isJobFinished: true,
+        subtitlesJson: JSON.stringify(subtitlesJson)
+      })
+
+      return new Success(req, res).json({ videoUrl: uploadedVideo.Location, subtitles: subtitlesJson })
+    }
   } catch (error) {
-    handleError(error.$metadata.httpStatusCode, error.message)
+    handleError(error.$metadata ? error.$metadata.httpStatusCode : 500, error.message)
   }
 }
 

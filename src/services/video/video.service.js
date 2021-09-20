@@ -1,24 +1,21 @@
 const srtConvert = require('aws-transcription-to-srt')
-const AWS = require('aws-sdk')
-
-AWS.config.update({ region: 'us-east-1' })
-
 const exec = require('child_process').exec
+const crypto = require('crypto')
 const https = require('https')
 const path = require('path')
 const fs = require('fs')
-const { resolve, normalize } = require('path')
+
+const uploadService = require('../aws/s3/upload.service')
 
 const downloadVideoTranscriptionFile = async (fileUrl) => {
   return new Promise((resolve, reject) => {
     https.get(fileUrl, async (response) => {
-      await response.pipe(fs.createWriteStream(path.resolve('src', 'tmp', 'file.json')))
-        .on('finish', async () => {
-          try {
-            resolve()
-          } catch(error) {
-            reject(error)
-          }
+      await response.pipe(fs.createWriteStream(path.resolve('src', 'tmp', 'transcriptionFile.json')))
+        .on('finish', () => {
+          resolve()
+        })
+        .on('error', (error) => {
+          reject(error)
         })
     })
     .on('error', (error) => {
@@ -29,7 +26,7 @@ const downloadVideoTranscriptionFile = async (fileUrl) => {
 
 const createSrtFile = async () => {
   return new Promise((resolve, reject) => {
-    fs.readFile(path.resolve('src', 'tmp', 'file.json'), 'utf-8', (error, data) => {
+    fs.readFile(path.resolve('src', 'tmp', 'transcriptionFile.json'), 'utf-8', (error, data) => {
       if (error) {
         reject(error)
       }
@@ -37,32 +34,60 @@ const createSrtFile = async () => {
       const json = JSON.parse(data)
       const srt = srtConvert(json)
 
-      fs.writeFile(path.resolve('src', 'tmp', 'subtitles.srt'), srt, (error) => {
+      fs.writeFile(path.resolve('src', 'tmp', 'subtitles.srt'), srt, async (error) => {
         if (error) {
           reject(error)
         }
 
-        resolve({
-          status: 'success'
-        })
+        const subtitlesJson = await srtToJson(path.resolve('src', 'tmp', 'subtitles.srt'))
+        resolve(subtitlesJson)
       })
     })
   })
 }
 
-const downloadVideoFile = async () => {
-  // TODO receber url do video via parametros do método e fazer download do arquivo correto
-  const videoUrl = 'https://vicap-bucket.s3.amazonaws.com/video-portugues.mp4'
+const srtToJson = async (filePath) => {
+  const fileBuffer = fs.readFileSync(filePath, 'utf-8')
 
+  const text = fileBuffer.toString()
+  const lines = text.split('\n')
+
+  const output = []
+  let buffer = {
+    text: ''
+  }
+
+  lines.forEach((line) => {
+    if (!buffer.id) {
+      buffer.id = line
+    } else if (!buffer.start) {
+      const range = line.split(' --> ')
+
+      buffer.start = range[0]
+      buffer.end = range[1]
+    } else if (line !== '') {
+      buffer.text = line
+    } else {
+      output.push(buffer)
+
+      buffer = {
+        text: ''
+      }
+    }
+  })
+
+  return JSON.parse(JSON.stringify(output))
+}
+
+const downloadVideoFile = async (originalVideoLink) => {
   return new Promise((resolve, reject) => {
-    https.get(videoUrl, async (response) => {
+    https.get(originalVideoLink, async (response) => {
       await response.pipe(fs.createWriteStream(path.resolve('src', 'tmp', 'originalVideo.mp4')))
         .on('finish', () => {
-          try {
-            resolve()
-          } catch(error) {
-            reject(error)
-          }
+          resolve()
+        })
+        .on('error', (error) => {
+          reject(error)
         })
     })
     .on('error', (error) => {
@@ -71,21 +96,21 @@ const downloadVideoFile = async () => {
   })
 }
 
-const generateSubtitledVideo = async () => {
+const generateSubtitledVideo = async (originalVideoLink) => {
   return new Promise(async (resolve, reject) => {
-    await downloadVideoFile()
+    await downloadVideoFile(originalVideoLink)
 
     /**
-     * TODO
-     * configurar os caminhos para os arquivos corretamente, aplicando os escapes
-     * nos caracteres necessários
+     * NOTE
+     * Ainda vai ser necessário configurar os caminhos para os arquivos corretamente,
+     * aplicando os escapes nos caracteres necessários. Deixei essa parte por último
+     * para não perder tempo demais nisso e conseguir finalizer. Como ainda não consegui
+     * implementar um método para fazer o normalize do caminho das legendas automaticamente,
+     * deixei hard coded. O método path.normalize() foi suficiente para os outros.
      *
      * Especificamente o caminho das legendas deve ter as 3 "\" após a letra C porque precisamos escapar
      * o caractere ":" para o ffmpeg e só funcionou colocando 3 barras invertidas
      * Assim: C\\\:/projects/vicap/back-vicap/src/tmp/subtitles.srt
-     *
-     * Ainda não consegui implementar um método para fazer o normalize automaticamente...
-     * Por enquanto está hard coded
      */
     const videoFile = path.normalize(path.resolve(__dirname, '..', '..', 'tmp', 'originalVideo.mp4'))
     const subtitlesFile = 'C\\\:/projects/vicap/back-vicap/src/tmp/subtitles.srt'
@@ -94,7 +119,7 @@ const generateSubtitledVideo = async () => {
       if (error) {
         reject(error)
       } else {
-        resolve('Deu boa carai!1!1!!')
+        resolve('Deu boa carai!1!1!!') // kkk
       }
     }).stdin.write("y\n")
   })
@@ -102,17 +127,16 @@ const generateSubtitledVideo = async () => {
 
 const uploadSubtitledVideoToS3 = async () => {
   return new Promise(async (resolve, reject) => {
-    const videoFile = path.normalize(path.resolve(__dirname, '..', '..', 'tmp', 'output.mp4'))
-
-    const fileStream = fs.createReadStream(videoFile)
-    fileStream.on('error', (error) => {
-      console.log('Deu zebra no upload aqui mano: ', error)
-      reject(error)
-    })
-
     try {
-      const result = await uploadToS3(fileStream)
+      const videoFile = path.normalize(path.resolve(__dirname, '..', '..', 'tmp', 'output.mp4'))
 
+      const fileName = await generateRandomFileName()
+      const fileStream = fs.createReadStream(videoFile)
+      fileStream.on('error', (error) => {
+        reject(error)
+      })
+
+      const result = await uploadService.uploadToS3(fileStream, fileName)
       resolve(result)
     } catch (error) {
       reject(error)
@@ -120,22 +144,17 @@ const uploadSubtitledVideoToS3 = async () => {
   })
 }
 
-const uploadToS3 = async (file) => {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const s3 = new AWS.S3({ apiVersion: '2006-03-01' })
-      const uploadParams = {
-        Bucket: 'vicap-bucket',
-        Key: 'subtitled-video.mp4',
-        Body: file
+const generateRandomFileName = async () => {
+  return new Promise((resolve, reject) => {
+    crypto.randomBytes(16, (error, hash) => {
+      if (error) {
+        reject(error)
       }
 
-      const uploadedFile = await s3.upload(uploadParams).promise()
+      const fileName = `${hash.toString('hex')}`
 
-      resolve(uploadedFile)
-    } catch (error) {
-      reject(error)
-    }
+      resolve(fileName)
+    })
   })
 }
 
