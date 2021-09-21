@@ -11,9 +11,14 @@ const startVideoTranscription = async (req, res) => {
 
   try {
     const transcriptionJobResult = await transcriptionService.startTranscriptionJob(transcriptionJobName, file.location)
-    await dbService.createTranscriptionJob({ jobName: transcriptionJobName, originalVideoLink: file.location })
+    await dbService.createTranscriptionJob({
+      jobName: transcriptionJobName,
+      originalVideoLink: file.location
+    })
 
-    return new Created(req, res).json({ transcriptionJobResult })
+    return new Created(req, res).json({
+      transcriptionJobResult
+    })
   } catch (error) {
     handleError(error.$metadata ? error.$metadata.httpStatusCode : 500, error.message)
   }
@@ -23,18 +28,28 @@ const listTranscriptionJobs = async (req, res) => {
   const { name: filter, nextPageToken } = req.query
 
   try {
-    const data = await transcriptionService.listTranscriptionJobs(filter, nextPageToken)
-    const result = data.TranscriptionJobSummaries.map((item) => ({
-      startTime: item.StartTime,
-      endTime: item.CompletionTime,
-      language: item.LanguageCode,
-      name: item.TranscriptionJobName,
-      status: item.TranscriptionJobStatus
-    }))
+    const dbData = await dbService.getAllTranscriptionJobs()
+    const transcribeData = await transcriptionService.listTranscriptionJobs(filter, nextPageToken)
+    const result = transcribeData.TranscriptionJobSummaries.map((item) => {
+      const dbRecordData = dbData.find((dbItem) => dbItem.jobName === item.TranscriptionJobName)
+
+      return {
+        startTime: item.StartTime,
+        endTime: item.CompletionTime,
+        language: item.LanguageCode,
+        name: item.TranscriptionJobName,
+        status: item.TranscriptionJobStatus,
+        originalVideoLink: dbRecordData.originalVideoLink,
+        ...(dbRecordData.subtitledVideoLink && { subtitledVideoLink: dbRecordData.subtitledVideoLink }),
+        ...(item.TranscriptionJobStatus === 'FAILED' && item.FailureReason && { failureReason: item.FailureReason })
+      }
+    })
 
     return new Success(req, res).json({
       jobs: result,
-      ...(data.NextToken && { nextPageToken: data.NextToken })
+      ...(transcribeData.NextToken && {
+        nextPageToken: transcribeData.NextToken
+      })
     })
   } catch (error) {
     handleError(error.$metadata ? error.$metadata.httpStatusCode : 500, error.message)
@@ -48,9 +63,14 @@ const getTranscriptionJobByName = async (req, res) => {
     const { subtitledVideoLink, subtitlesJson } = await dbService.getTranscriptionJobByName(transcriptionJobName)
 
     if (subtitledVideoLink) {
-      return res.json({ videoUrl: subtitledVideoLink, subtitles: JSON.parse(subtitlesJson) })
+      return res.json({
+        videoUrl: subtitledVideoLink,
+        subtitles: JSON.parse(subtitlesJson)
+      })
     } else {
-      const { transcriptionFileUrl, originalVideoLink } = await transcriptionService.getTranscriptionDetailsByName(transcriptionJobName)
+      const { transcriptionFileUrl, originalVideoLink } = await transcriptionService.getTranscriptionDetailsByName(
+        transcriptionJobName
+      )
       await videoService.downloadVideoTranscriptionFile(transcriptionFileUrl)
       const subtitlesJson = await videoService.createSrtFile()
       await videoService.generateSubtitledVideo(originalVideoLink)
@@ -62,7 +82,10 @@ const getTranscriptionJobByName = async (req, res) => {
         subtitlesJson: JSON.stringify(subtitlesJson)
       })
 
-      return new Success(req, res).json({ videoUrl: uploadedVideo.Location, subtitles: subtitlesJson })
+      return new Success(req, res).json({
+        videoUrl: uploadedVideo.Location,
+        subtitles: subtitlesJson
+      })
     }
   } catch (error) {
     handleError(error.$metadata ? error.$metadata.httpStatusCode : 500, error.message)
