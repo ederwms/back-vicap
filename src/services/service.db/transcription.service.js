@@ -1,70 +1,48 @@
 const db = require('./_access')
+const transcriptionModel = require('../../models/transcription')
 
 const getAllTranscriptionJobs = async () => {
   try {
-    const result = await db.query(
-      `
-        SELECT
-          job_name as "jobName",
-          original_video_link as "originalVideoLink",
-          subtitled_video_link as "subtitledVideoLink",
-          is_job_finished as "isJobFinished",
-          subtitles_json as "subtitlesJson"
-        FROM transcription_jobs;
-      `
-    )
+    const result = await transcriptionModel.find({})
 
-    return result
+    return result.map((item) => ({
+      jobName: item._doc.job_name,
+      originalVideoLink: item._doc.original_video_link,
+      subtitledVideoLink: item._doc.subtitled_video_link,
+      videoThumbnail: item._doc.video_thumbnail,
+      subtitlesJson: item._doc.subtitles_json
+    }))
   } catch(error) {
     throw error
   }
 }
 
 const getTranscriptionJobByName = async (name) => {
-  const result = await db.queryFirstOrDefault(
-    `
-      SELECT
-        job_name as "jobName",
-        original_video_link as "originalVideoLink",
-        subtitled_video_link as "subtitledVideoLink",
-        is_job_finished as "isJobFinished",
-        subtitles_json as "subtitlesJson"
-      FROM transcription_jobs
-      WHERE job_name = $1;
-    `,
-    [name]
-  )
+  const result = await transcriptionModel.findOne({ job_name: name })
 
-  return result
+  return result._doc
 }
 
 const createTranscriptionJob = async ({ jobName, originalVideoLink }) => {
-  const result = await db.insertOrUpdate(
-    `
-      INSERT INTO transcription_jobs
-        (job_name, original_video_link, subtitled_video_link, is_job_finished, subtitles_json)
-      VALUES
-        ($1, $2, $3, $4, $5)
-      RETURNING *;
-    `,
-    [jobName, originalVideoLink, null, false, null]
-  )
+  const result = await transcriptionModel.create({
+    job_name: jobName,
+    original_video_link: originalVideoLink,
+    video_thumbnail: null,
+    subtitled_video_link: null,
+    subtitles_json: null
+  })
 
   return result
 }
 
-const editTranscriptionJob = async ({ jobName, subtitledVideoLink, isJobFinished, subtitlesJson }) => {
-  const result = await db.insertOrUpdate(
-    `
-      UPDATE transcription_jobs SET
-        subtitled_video_link = $2,
-        is_job_finished = $3,
-        subtitles_json = $4
-      WHERE job_name = $1
-      RETURNING *
-    `,
-    [jobName, subtitledVideoLink, isJobFinished, subtitlesJson]
-  )
+const editTranscriptionJob = async ({ jobName, subtitledVideoLink, subtitlesJson, videoThumbnail }) => {
+  const result = await transcriptionModel.updateOne({ job_name: jobName }, {
+    $set: {
+      subtitled_video_link: subtitledVideoLink,
+      subtitles_json: subtitlesJson,
+      video_thumbnail: videoThumbnail
+    }
+  })
 
   return result
 }

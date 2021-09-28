@@ -5,6 +5,9 @@ const http = require('http')
 const express = require('express')
 const morgan = require('morgan')
 const cors = require('cors')
+const mongoose = require('mongoose')
+
+const { dbUri } = require('./services/service.db/_access')
 
 const routes = require('./routes/v1')
 
@@ -15,6 +18,7 @@ class App {
     this.app = express()
     this.server = http.createServer(this.app)
 
+    this.database()
     this.middlewares()
     this.routes()
     this.exceptionHandler()
@@ -22,6 +26,10 @@ class App {
 
   routes () {
     routes.configureRoutes(this.app)
+  }
+
+  database () {
+    mongoose.connect(dbUri, { useNewUrlParser: true })
   }
 
   middlewares () {

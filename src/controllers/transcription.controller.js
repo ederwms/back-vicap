@@ -6,18 +6,18 @@ const { Created, Success } = require('../helpers/success')
 const handleError = require('../helpers/errors/errorHandler')
 
 const startVideoTranscription = async (req, res) => {
-  const { transcriptionJobName } = req.body
-  const file = req.file
+  const { transcriptionJobName, videoUrl } = req.body
 
   try {
-    const transcriptionJobResult = await transcriptionService.startTranscriptionJob(transcriptionJobName, file.location)
+    const transcriptionJobResult = await transcriptionService.startTranscriptionJob(transcriptionJobName, videoUrl)
     await dbService.createTranscriptionJob({
       jobName: transcriptionJobName,
-      originalVideoLink: file.location
+      originalVideoLink: videoUrl
     })
 
     return new Created(req, res).json({
-      transcriptionJobResult
+      transcriptionJobResult,
+      message: 'Pedido de transcrição gerado com sucesso!'
     })
   } catch (error) {
     handleError(error.$metadata ? error.$metadata.httpStatusCode : 500, error.message)
@@ -40,6 +40,7 @@ const listTranscriptionJobs = async (req, res) => {
         name: item.TranscriptionJobName,
         status: item.TranscriptionJobStatus,
         originalVideoLink: dbRecordData.originalVideoLink,
+        ...(dbRecordData.videoThumbnail && { videoThumbnail: dbRecordData.videoThumbnail }),
         ...(dbRecordData.subtitledVideoLink && { subtitledVideoLink: dbRecordData.subtitledVideoLink }),
         ...(item.TranscriptionJobStatus === 'FAILED' && item.FailureReason && { failureReason: item.FailureReason })
       }
@@ -60,11 +61,16 @@ const getTranscriptionJobByName = async (req, res) => {
   const transcriptionJobName = req.query.name
 
   try {
-    const { subtitledVideoLink, subtitlesJson } = await dbService.getTranscriptionJobByName(transcriptionJobName)
+    const {
+      subtitled_video_link: subtitledVideoLink,
+      subtitles_json: subtitlesJson,
+      video_thumbnail: videoThumbnail
+    } = await dbService.getTranscriptionJobByName(transcriptionJobName)
 
     if (subtitledVideoLink) {
       return res.json({
         videoUrl: subtitledVideoLink,
+        thumbnailUrl: videoThumbnail,
         subtitles: JSON.parse(subtitlesJson)
       })
     } else {
@@ -74,16 +80,19 @@ const getTranscriptionJobByName = async (req, res) => {
       await videoService.downloadVideoTranscriptionFile(transcriptionFileUrl)
       const subtitlesJson = await videoService.createSrtFile()
       await videoService.generateSubtitledVideo(originalVideoLink)
+      await videoService.generateVideoThumbnail()
+      const uploadedThumbnail = await videoService.uploadThumbnailToS3()
       const uploadedVideo = await videoService.uploadSubtitledVideoToS3()
       await dbService.editTranscriptionJob({
         jobName: transcriptionJobName,
         subtitledVideoLink: uploadedVideo.Location,
-        isJobFinished: true,
+        videoThumbnail: uploadedThumbnail.Location,
         subtitlesJson: JSON.stringify(subtitlesJson)
       })
 
       return new Success(req, res).json({
         videoUrl: uploadedVideo.Location,
+        thumbnailUrl: uploadedThumbnail.Location,
         subtitles: subtitlesJson
       })
     }

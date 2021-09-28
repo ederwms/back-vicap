@@ -5,8 +5,6 @@ const {
   GetTranscriptionJobCommand
 } = require('@aws-sdk/client-transcribe')
 
-const dbService = require('../../service.db/transcription.service')
-
 const client = new TranscribeClient({ region: process.env.AWS_REGION })
 
 const startTranscriptionJob = async (jobName, fileUrl) => {

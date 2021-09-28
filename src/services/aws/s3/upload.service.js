@@ -8,7 +8,7 @@ const uploadToS3 = async (file, fileName = 'subtitled-video') => {
       const s3 = new AWS.S3({ apiVersion: '2006-03-01' })
       const uploadParams = {
         Bucket: 'vicap-bucket',
-        Key: `${fileName}.mp4`,
+        Key: fileName,
         Body: file,
         ACL: 'public-read'
       }

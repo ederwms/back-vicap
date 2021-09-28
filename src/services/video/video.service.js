@@ -125,6 +125,40 @@ const generateSubtitledVideo = async (originalVideoLink) => {
   })
 }
 
+const generateVideoThumbnail = async () => {
+  return new Promise((resolve, reject) => {
+    const imageFile = path.normalize(path.resolve(__dirname, '..', '..', 'tmp', 'originalVideo.mp4'))
+    const outputFile = path.normalize(path.resolve(__dirname, '..', '..', 'tmp', 'thumbnail.jpg'))
+
+    exec(`ffmpeg -itsoffset -1 -i ${imageFile} -vcodec mjpeg -vframes 1 -an -f rawvideo -s 1920x1080 ${outputFile}`, (error, stdout, stderr) => {
+      if (error) {
+        reject(error)
+      } else {
+        resolve('Deu boa carai!1!1!!') // kkk
+      }
+    }).stdin.write("y\n")
+  })
+}
+
+const uploadThumbnailToS3 = async () => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const imageFile = path.normalize(path.resolve(__dirname, '..', '..', 'tmp', 'thumbnail.jpg'))
+
+      const fileName = await generateRandomFileName()
+      const fileStream = fs.createReadStream(imageFile)
+      fileStream.on('error', (error) => {
+        reject(error)
+      })
+
+      const result = await uploadService.uploadToS3(fileStream, `${fileName}.jpg`)
+      resolve(result)
+    } catch (error) {
+      reject(error)
+    }
+  })
+}
+
 const uploadSubtitledVideoToS3 = async () => {
   return new Promise(async (resolve, reject) => {
     try {
@@ -136,7 +170,7 @@ const uploadSubtitledVideoToS3 = async () => {
         reject(error)
       })
 
-      const result = await uploadService.uploadToS3(fileStream, fileName)
+      const result = await uploadService.uploadToS3(fileStream, `${fileName}.mp4`)
       resolve(result)
     } catch (error) {
       reject(error)
@@ -161,6 +195,8 @@ const generateRandomFileName = async () => {
 module.exports = {
   downloadVideoTranscriptionFile,
   generateSubtitledVideo,
+  generateVideoThumbnail,
+  uploadThumbnailToS3,
   uploadSubtitledVideoToS3,
   createSrtFile
 }
