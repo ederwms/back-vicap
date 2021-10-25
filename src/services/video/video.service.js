@@ -104,12 +104,12 @@ const generateSubtitledVideo = async (originalVideoLink) => {
      * NOTE
      * Ainda vai ser necessário configurar os caminhos para os arquivos corretamente,
      * aplicando os escapes nos caracteres necessários. Deixei essa parte por último
-     * para não perder tempo demais nisso e conseguir finalizer. Como ainda não consegui
+     * para não perder tempo demais nisso e conseguir finalizar. Como ainda não consegui
      * implementar um método para fazer o normalize do caminho das legendas automaticamente,
      * deixei hard coded. O método path.normalize() foi suficiente para os outros.
      *
      * Especificamente o caminho das legendas deve ter as 3 "\" após a letra C porque precisamos escapar
-     * o caractere ":" para o ffmpeg e só funcionou colocando 3 barras invertidas
+     * o caractere ":" para o FFmpeg e só funcionou colocando 3 barras invertidas
      * Assim: C\\\:/projects/vicap/back-vicap/src/tmp/subtitles.srt
      */
     const videoFile = path.normalize(path.resolve(__dirname, '..', '..', 'tmp', 'originalVideo.mp4'))

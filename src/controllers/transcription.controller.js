@@ -68,7 +68,7 @@ const getTranscriptionJobByName = async (req, res) => {
     } = await dbService.getTranscriptionJobByName(transcriptionJobName)
 
     if (subtitledVideoLink) {
-      return res.json({
+      return new Success(req, res).json({
         videoUrl: subtitledVideoLink,
         thumbnailUrl: videoThumbnail,
         subtitles: JSON.parse(subtitlesJson)
@@ -77,6 +77,7 @@ const getTranscriptionJobByName = async (req, res) => {
       const { transcriptionFileUrl, originalVideoLink } = await transcriptionService.getTranscriptionDetailsByName(
         transcriptionJobName
       )
+
       await videoService.downloadVideoTranscriptionFile(transcriptionFileUrl)
       const subtitlesJson = await videoService.createSrtFile()
       await videoService.generateSubtitledVideo(originalVideoLink)
