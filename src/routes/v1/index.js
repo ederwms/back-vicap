@@ -1,8 +1,10 @@
 const healthCheckRoute = require('./health-check')
-const videoTranscriptionRoutes = require('./video-transcription')
+const videoTranscriptionRoutes = require('./transcription')
+const fileRoutes = require('./file')
 
 const configureRoutes = (server) => {
   server.use(videoTranscriptionRoutes)
+  server.use(fileRoutes)
   server.use(healthCheckRoute)
 }
 
